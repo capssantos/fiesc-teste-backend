@@ -31,4 +31,7 @@ def health_check(db: Session = Depends(get_db)) -> HealthResponse:
         document_index="mapped" if Path(settings.fault_document_map_path).exists() else "missing",
         fault_document_map="loaded" if Path(settings.fault_document_map_path).exists() else "missing",
         llm="configured" if settings.llm_configured else "llm_not_configured",
+        llm_provider=settings.effective_llm_provider,
+        openai_model=settings.openai_model,
+        openai_api_key_present=bool(settings.openai_api_key),
     )
