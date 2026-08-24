@@ -13,7 +13,7 @@ from app.core.config import BACKEND_ROOT, settings
 from app.db.models import DocumentChunkRecord, DocumentRecord
 from app.services.document_retrieval import _tokenize, extract_document_chunks
 from app.services.fault_map import load_fault_map
-from app.services.object_storage import download_bytes, generate_download_url, upload_bytes
+from app.services.object_storage import delete_object, download_bytes, generate_download_url, upload_bytes
 
 
 def calculate_content_hash(data: bytes) -> str:
@@ -100,6 +100,8 @@ def seed_bundled_rag_documents(db: Session) -> None:
             and settings.storage_configured
             and (document.metadata_json or {}).get("storage_status") != "s3"
         )
+        if document and document.status == "deleted":
+            continue
         if document and document.content_hash == content_hash and document.status == "indexed" and not needs_s3_upload:
             continue
 
@@ -160,6 +162,9 @@ def seed_bundled_rag_documents(db: Session) -> None:
 
 
 def document_download_url(request_url_for, document: DocumentRecord) -> str | None:
+    if document.status == "deleted":
+        return None
+
     metadata = document.metadata_json or {}
     bucket = metadata.get("bucket")
     object_key = metadata.get("object_key")
@@ -171,6 +176,33 @@ def document_download_url(request_url_for, document: DocumentRecord) -> str | No
     if document.source == "rag" and document.external_id:
         return str(request_url_for("download_rag_document", document_id=document.external_id))
     return None
+
+
+def delete_document_from_index(db: Session, document: DocumentRecord) -> bool:
+    metadata = document.metadata_json or {}
+    bucket = metadata.get("bucket")
+    object_key = metadata.get("object_key")
+    storage_deleted = False
+
+    if bucket and object_key:
+        try:
+            delete_object(bucket=bucket, object_key=object_key)
+            storage_deleted = True
+        except HTTPException as exc:
+            metadata["delete_storage_error"] = exc.detail
+
+    db.execute(delete(DocumentChunkRecord).where(DocumentChunkRecord.document_id == document.id))
+    metadata.update(
+        {
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "storage_deleted": storage_deleted,
+        }
+    )
+    document.metadata_json = metadata
+    document.status = "deleted"
+    document.indexed_at = None
+    db.commit()
+    return storage_deleted
 
 
 def retrieve_indexed_document_context(db: Session, documents: list[dict[str, Any]], query: str, top_k: int = 3) -> list[dict[str, Any]]:

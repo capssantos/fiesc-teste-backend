@@ -32,3 +32,10 @@ class DocumentUploadResponse(BaseModel):
 class DocumentReindexResponse(BaseModel):
     document: DocumentItem
     message: str
+
+
+class DocumentDeleteResponse(BaseModel):
+    id: UUID
+    status: str
+    storage_deleted: bool = False
+    message: str

@@ -11,12 +11,13 @@ from app.core.config import BACKEND_ROOT
 from app.core.config import settings
 from app.db.models import DocumentChunkRecord, DocumentRecord
 from app.db.session import get_db
-from app.schemas.document import DocumentItem, DocumentReindexResponse, DocumentUploadResponse
+from app.schemas.document import DocumentDeleteResponse, DocumentItem, DocumentReindexResponse, DocumentUploadResponse
 from app.services.document_storage import sanitize_filename, validate_extension
 from app.services.fault_map import get_fault_entry, load_fault_map
 from app.services.object_storage import upload_bytes
 from app.services.rag_index import (
     calculate_content_hash,
+    delete_document_from_index,
     document_download_url,
     index_document_content,
     reindex_document,
@@ -57,7 +58,11 @@ def _document_item(request: Request, record: DocumentRecord) -> DocumentItem:
 @router.get("", response_model=list[DocumentItem])
 def list_documents(request: Request, db: Session = Depends(get_db)) -> list[DocumentItem]:
     try:
-        records = db.scalars(select(DocumentRecord).order_by(DocumentRecord.source, DocumentRecord.created_at.desc())).all()
+        records = db.scalars(
+            select(DocumentRecord)
+            .where(DocumentRecord.status != "deleted")
+            .order_by(DocumentRecord.source, DocumentRecord.created_at.desc())
+        ).all()
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -124,6 +129,21 @@ def reindex_existing_document(document_id: uuid.UUID, request: Request, db: Sess
     return DocumentReindexResponse(
         document=_document_item(request, record),
         message="Document reindexed.",
+    )
+
+
+@router.delete("/{document_id}", response_model=DocumentDeleteResponse)
+def delete_existing_document(document_id: uuid.UUID, db: Session = Depends(get_db)) -> DocumentDeleteResponse:
+    record = db.get(DocumentRecord, document_id)
+    if record is None or record.status == "deleted":
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    storage_deleted = delete_document_from_index(db, record)
+    return DocumentDeleteResponse(
+        id=document_id,
+        status="deleted",
+        storage_deleted=storage_deleted,
+        message="Document removed from RAG index.",
     )
 
 
