@@ -81,12 +81,23 @@ class Settings(BaseSettings):
         )
 
     @property
+    def effective_llm_provider(self) -> str | None:
+        if self.llm_provider:
+            return self.llm_provider.lower()
+        if self.openai_api_key and self.openai_model:
+            return "openai"
+        if self.ollama_model and self.ollama_base_url:
+            return "ollama"
+        return None
+
+    @property
     def llm_configured(self) -> bool:
-        if not self.llm_provider:
+        provider = self.effective_llm_provider
+        if not provider:
             return False
-        if self.llm_provider.lower() == "ollama":
+        if provider == "ollama":
             return bool(self.ollama_model and self.ollama_base_url)
-        if self.llm_provider.lower() == "openai":
+        if provider == "openai":
             return bool(self.openai_model and self.openai_api_key and self.openai_base_url)
         return False
 

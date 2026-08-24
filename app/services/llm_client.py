@@ -29,7 +29,7 @@ def _http_post(url: str, payload: dict, headers: dict[str, str]) -> dict:
 
 
 def generate_llm_text(system_prompt: str, user_prompt: str) -> str:
-    provider = (settings.llm_provider or "").lower()
+    provider = settings.effective_llm_provider
     if provider == "openai":
         payload = {
             "model": settings.openai_model,
