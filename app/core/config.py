@@ -7,7 +7,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
-REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Settings(BaseSettings):
@@ -20,6 +19,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/fiesc_predictive"
+    database_connect_timeout_seconds: int = 5
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,https://fiesc.carlosp.dev"
     cors_origin_regex: str = r"https?://(localhost|127\.0\.0\.1)(:\d+)?$"
     auto_migrate_on_startup: bool = True
@@ -46,8 +46,8 @@ class Settings(BaseSettings):
     similarity_metric: str = "euclidean"
     max_upload_size_mb: int = 10
     allowed_document_extensions: str = ".pdf,.txt,.md,.docx"
-    fault_document_map_path: str = str(REPO_ROOT / "config" / "fault_document_map.yaml")
-    dataset_path: str = str(REPO_ROOT / "docs" / "banner.csv")
+    fault_document_map_path: str = str(BACKEND_ROOT / "config" / "fault_document_map.yaml")
+    dataset_path: str = str(BACKEND_ROOT / "docs" / "banner.csv")
 
     @field_validator("debug", mode="before")
     @classmethod

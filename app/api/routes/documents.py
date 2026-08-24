@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,7 +19,17 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 @router.get("", response_model=list[DocumentItem])
 def list_documents(db: Session = Depends(get_db)) -> list[DocumentItem]:
-    records = db.scalars(select(DocumentRecord).order_by(DocumentRecord.created_at.desc())).all()
+    try:
+        records = db.scalars(select(DocumentRecord).order_by(DocumentRecord.created_at.desc())).all()
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "database_unavailable",
+                "message": "Banco de dados indisponivel para listar documentos.",
+            },
+        ) from exc
+
     response: list[DocumentItem] = []
     for record in records:
         metadata = record.metadata_json or {}
@@ -26,7 +37,10 @@ def list_documents(db: Session = Depends(get_db)) -> list[DocumentItem]:
         object_key = metadata.get("object_key")
         download_url = None
         if bucket and object_key:
-            download_url = generate_download_url(bucket=bucket, object_key=object_key, response_filename=record.filename)
+            try:
+                download_url = generate_download_url(bucket=bucket, object_key=object_key, response_filename=record.filename)
+            except HTTPException:
+                download_url = None
         response.append(
             DocumentItem(
                 id=record.id,

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
-from app.core.config import REPO_ROOT
+from app.core.config import BACKEND_ROOT
 
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9_]{3,}")
@@ -25,7 +25,7 @@ def _resolve_document_path(document_path: str) -> Path:
     path = Path(document_path)
     if path.is_absolute():
         return path
-    return Path(REPO_ROOT) / path
+    return Path(BACKEND_ROOT) / path
 
 
 def _chunk_text(text: str, max_chars: int = 1400) -> list[str]:

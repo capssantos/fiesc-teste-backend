@@ -1,0 +1,325 @@
+version: 1
+generated_from:
+  inventory: docs/explicacao_documentos.md
+  analysis: docs/data_analysis.md
+  mapping_review: docs/fault_document_map.yaml
+
+defaults:
+  raw_fault_label_preserved: true
+  recommendation_requires_document: true
+  unsupported_fault_status: documentation_not_found
+  insufficient_context_status: insufficient_document_context
+
+documents:
+  doc1:
+    path: docs/Doc1.pdf
+    title: Procedimento para Diagnostico e Correcao de Problemas em Rolamentos
+  doc2:
+    path: docs/Doc2.pdf
+    title: Procedimento para Correcao de Desalinhamento em Motor Eletrico
+  doc3:
+    path: docs/Doc3.pdf
+    title: Procedimento para Correcao de Desbalanceamento em Maquinas Rotativas
+  doc4:
+    path: docs/Doc4.pdf
+    title: Procedimento para Diagnostico e Correcao de Problemas em Sistemas de Transmissao por Correias
+  doc5:
+    path: docs/Doc5.pdf
+    title: Procedimento para Diagnostico e Correcao de Problemas em Polias de Sistemas Rotativos
+  doc6:
+    path: docs/Doc6.pdf
+    title: Procedimento para Diagnostico e Correcao de Problemas de Rotor Inclinado (Cocked Rotor)
+
+normalization:
+  typo_aliases:
+    mortor_desligado_novo: motor_desligado_novo
+    normla_carga_3_3: normal_carga_3_3
+    desbanlanceado_carga_3_2: desbalanceado_carga_3_2
+    dedesbalanceado_adxl_1: desbalanceado_adxl_1
+    ddesbalanceado_adxl_0: desbalanceado_adxl_0
+    cockecocked_adxl_0: cocked_adxl_0
+    new_desabanceado_1: new_desbalanceado_1
+
+faults:
+  normal:
+    kind: non_fault
+    recommendation_supported: false
+    canonical_label: normal
+    raw_labels:
+      - normal
+      - normal_2
+      - normal_2_pos_2
+      - normal_3
+      - normal_3_pos_2
+      - normal_6
+      - normal_adxl_0
+      - normal_adxl_1
+      - normal_carga
+      - normal_carga_3
+      - normal_carga_3_2
+      - normal_carga_3_3
+      - normal_novo
+      - normal_novo_teste
+      - normal_pos_2
+      - new_normal_0
+      - new_normal_1
+      - new_normal_2
+      - new_normal_3
+      - new_normal_4
+      - new_normal_5
+      - new_normal_6
+      - normla_carga_3_3
+
+  baseline:
+    kind: non_fault
+    recommendation_supported: false
+    canonical_label: baseline
+    raw_labels:
+      - baseline
+      - new_baseline
+
+  teste:
+    kind: non_fault
+    recommendation_supported: false
+    canonical_label: teste
+    raw_labels:
+      - teste
+      - new_tes
+      - new_teste
+
+  acelerando:
+    kind: non_fault
+    recommendation_supported: false
+    canonical_label: acelerando
+    raw_labels:
+      - acelerando
+
+  motor_desligado:
+    kind: non_fault
+    recommendation_supported: false
+    canonical_label: motor_desligado
+    raw_labels:
+      - motor_desligado
+      - motor_desligado_novo
+      - mortor_desligado_novo
+
+  rolamento_outer:
+    kind: fault
+    recommendation_supported: true
+    canonical_label: rolamento_outer
+    documents:
+      - doc1
+    raw_labels:
+      - rolamento_outer
+      - rolamento_outer_2
+      - rolamento_outer_3
+      - rolamento_outer_4
+      - rolamento_outer_adxl_0
+      - rolamento_outer_adxl_1
+      - rolamento_outer_carga
+      - rolamento_outer_novo
+      - rolamento_outer_novo_teste
+      - rolamento_outer_pos_2
+      - new_rolamento_outer_0
+      - new_rolamento_outer_1
+      - new_rolamento_outer_2
+      - new_rolamento_outer_3
+
+  rolamento_inner:
+    kind: fault
+    recommendation_supported: true
+    canonical_label: rolamento_inner
+    documents:
+      - doc1
+    raw_labels:
+      - rolamento_inner
+      - rolamento_inner_2
+      - rolamento_inner_3
+      - rolamento_inner_4
+      - rolamento_inner_adxl_0
+      - rolamento_inner_carga
+      - rolamento_inner_carga_2
+      - rolamento_inner_pos_2
+      - new_rolamento_inner_0
+      - new_rolamento_inner_1
+      - new_rolamento_inner_2
+      - new_rolamento_inner_3
+
+  rolamento_ball:
+    kind: fault
+    recommendation_supported: true
+    canonical_label: rolamento_ball
+    documents:
+      - doc1
+    raw_labels:
+      - rolamento_ball
+      - rolamento_ball_2
+      - rolamento_ball_3
+      - rolamento_ball_4
+      - rolamento_ball_adxl_0
+      - rolamento_ball_carga
+      - rolamento_ball_carga_3
+      - rolamento_ball_pos_2
+      - new_rolamento_ball_0
+      - new_rolamento_ball_1
+      - new_rolamento_ball_2
+      - new_rolamento_ball_3
+
+  rolamento_combination:
+    kind: fault
+    recommendation_supported: false
+    canonical_label: rolamento_combination
+    candidate_documents:
+      - doc1
+    raw_labels:
+      - rolamento_combination
+      - rolamento_combination_2
+      - rolamento_combination_3
+      - rolamento_combination_4
+      - rolamento_combination_carga
+      - rolamento_combination_pos_2
+      - rolamento_comb_adxl_0
+      - new_rolamento_comb_0
+      - new_rolamento_comb_1
+      - new_rolamento_comb_2
+      - new_rolamento_comb_3
+    notes:
+      - keep blocked until the team confirms that Doc1 is sufficient for combined bearing guidance
+
+  desalinhado:
+    kind: fault
+    recommendation_supported: true
+    canonical_label: desalinhado
+    documents:
+      - doc2
+    raw_labels:
+      - desalinhado
+      - desalinhado_2
+      - desalinhado_3
+      - new_desalinhado_0
+      - new_desalinhado_1
+      - new_desalinhado_2
+      - new_desalinhado_3
+      - new_desalinhado_4
+
+  desbalanceamento:
+    kind: fault
+    recommendation_supported: true
+    canonical_label: desbalanceamento
+    documents:
+      - doc3
+    raw_labels:
+      - desbalanceamento
+      - desbalanceado_1parafuso
+      - desbalanceado_1parafuso_3
+      - desbalanceado_2_pos_2
+      - desbalanceado_3
+      - desbalanceado_adxl_0
+      - desbalanceado_adxl_1
+      - desbalanceado_carga
+      - desbalanceado_carga_2
+      - desbalanceado_carga_3
+      - desbalanceado_carga_3_2
+      - desbalanceado_novo
+      - desbalanceado_pos_2
+      - desabalanceado_3
+      - desbanlanceado_carga_3_2
+      - dedesbalanceado_adxl_1
+      - ddesbalanceado_adxl_0
+      - new_desbalanceado_0
+      - new_desbalanceado_1
+      - new_desbalanceado_2
+      - new_desbalanceado_3
+      - new_desbalanceado_antigo_0
+      - new_desbalanceado_antigo_1
+      - new_desbalanceado_antigo_2
+      - new_desbalanceado_antigo_3
+      - new_desabanceado_1
+
+  correia:
+    kind: fault
+    recommendation_supported: true
+    canonical_label: correia
+    documents:
+      - doc4
+    raw_labels:
+      - correia
+      - correia_2
+
+  polia:
+    kind: fault
+    recommendation_supported: true
+    canonical_label: polia
+    documents:
+      - doc5
+    raw_labels:
+      - polia
+      - polia_2
+
+  cocked_rotor:
+    kind: fault
+    recommendation_supported: true
+    canonical_label: cocked_rotor
+    documents:
+      - doc6
+    raw_labels:
+      - cocked_rotor
+      - cocked_rotor_2
+      - cocked_rotor_2_pos_2
+      - cocked_rotor_carga
+      - cocked_rotor_pos_2
+      - cocked_adxl_0
+      - cockecocked_adxl_0
+      - new_cocked_0
+      - new_cocked_1
+      - new_cocked_2
+      - new_cocked_3
+
+  eccentric_rotor:
+    kind: fault
+    recommendation_supported: false
+    canonical_label: eccentric_rotor
+    candidate_documents:
+      - doc5
+    raw_labels:
+      - eccentric_2_pos_2
+      - eccentric_adxl_0
+      - eccentric_rotor
+      - eccentric_rotor_2
+      - eccentric_rotor_2_pos_2
+      - eccentric_rotor_3
+      - eccentric_rotor_4
+      - eccentric_rotor_carga
+      - eccentric_rotor_carga_2
+      - eccentric_rotor_pos_2
+      - new_eccentric_0
+      - new_eccentric_1
+      - new_eccentric_2
+      - new_eccentric_3
+    notes:
+      - Doc5 discusses excentricity in the pulley domain, which is not enough evidence for rotor-eccentricity recommendations
+
+  ventoinha:
+    kind: fault
+    recommendation_supported: false
+    canonical_label: ventoinha
+    raw_labels:
+      - ventoinha
+      - ventoinha_2
+      - ventoinha_3
+      - ventoinha_adxl_0
+
+  falta_fase:
+    kind: fault
+    recommendation_supported: false
+    canonical_label: falta_fase
+    raw_labels:
+      - new_falta_fase_0
+      - new_falta_fase_1
+      - new_falta_fase_2
+      - new_falta_fase_3
+
+runtime_notes:
+  - canonicalization should first apply typo_aliases, then resolve by raw_labels membership
+  - if a raw label does not match any configured group, preserve the raw label and treat it as unsupported until mapped
+  - recommendation generation must check recommendation_supported before calling the LLM

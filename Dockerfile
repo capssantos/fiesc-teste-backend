@@ -12,6 +12,8 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY app /workspace/backend/app
 COPY alembic /workspace/backend/alembic
+COPY config /workspace/backend/config
+COPY docs /workspace/backend/docs
 COPY alembic.ini docker-entrypoint.sh ./
 
 RUN chmod +x /workspace/backend/docker-entrypoint.sh
