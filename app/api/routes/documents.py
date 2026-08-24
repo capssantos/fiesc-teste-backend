@@ -20,6 +20,7 @@ from app.services.rag_index import (
     delete_document_from_index,
     document_download_url,
     index_document_content,
+    mark_document_index_failed,
     reindex_document,
     seed_bundled_rag_documents,
 )
@@ -101,13 +102,10 @@ def reindex_documents(db: Session = Depends(get_db)) -> dict[str, int]:
     reindexed = 0
     failed = 0
     for record in records:
-        try:
-            reindex_document(db, record)
+        if reindex_document(db, record):
             reindexed += 1
-        except HTTPException:
+        else:
             failed += 1
-            record.status = "index_failed"
-            db.commit()
 
     indexed_documents = db.scalar(select(func.count()).select_from(DocumentRecord).where(DocumentRecord.status == "indexed")) or 0
     document_chunks = db.scalar(select(func.count()).select_from(DocumentChunkRecord)) or 0
@@ -194,9 +192,16 @@ async def upload_document(
     )
     db.add(record)
     db.flush()
-    index_document_content(db, record, content)
     db.commit()
     db.refresh(record)
+
+    try:
+        index_document_content(db, record, content)
+        db.commit()
+    except Exception as exc:
+        mark_document_index_failed(db, record, exc)
+    else:
+        db.refresh(record)
 
     return DocumentUploadResponse(
         document=_document_item(request, record),

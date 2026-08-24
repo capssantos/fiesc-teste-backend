@@ -53,25 +53,46 @@ def index_document_content(db: Session, document: DocumentRecord, data: bytes) -
     document.status = "indexed" if chunks else "index_empty"
 
 
-def reindex_document(db: Session, document: DocumentRecord) -> None:
-    metadata = document.metadata_json or {}
-    bucket = metadata.get("bucket")
-    object_key = metadata.get("object_key")
-    if bucket and object_key:
-        data = download_bytes(bucket=bucket, object_key=object_key)
-    else:
-        local_path = metadata.get("path") or document.stored_path
-        resolved_path = Path(str(local_path))
-        if not resolved_path.is_absolute():
-            resolved_path = BACKEND_ROOT / resolved_path
-        if not resolved_path.exists() or not resolved_path.is_file():
-            raise HTTPException(status_code=404, detail="Document file not found.")
-        data = resolved_path.read_bytes()
-
-    document.status = "indexing"
-    index_document_content(db, document, data)
+def mark_document_index_failed(db: Session, document: DocumentRecord, exc: Exception) -> None:
+    metadata = dict(document.metadata_json or {})
+    metadata["index_error"] = getattr(exc, "detail", str(exc))
+    metadata["index_failed_at"] = datetime.now(timezone.utc).isoformat()
+    db.execute(delete(DocumentChunkRecord).where(DocumentChunkRecord.document_id == document.id))
+    document.metadata_json = metadata
+    document.status = "index_failed"
+    document.indexed_at = None
     db.commit()
     db.refresh(document)
+
+
+def reindex_document(db: Session, document: DocumentRecord) -> bool:
+    document.status = "indexing"
+    document.indexed_at = None
+    db.commit()
+    db.refresh(document)
+
+    try:
+        metadata = document.metadata_json or {}
+        bucket = metadata.get("bucket")
+        object_key = metadata.get("object_key")
+        if bucket and object_key:
+            data = download_bytes(bucket=bucket, object_key=object_key)
+        else:
+            local_path = metadata.get("path") or document.stored_path
+            resolved_path = Path(str(local_path))
+            if not resolved_path.is_absolute():
+                resolved_path = BACKEND_ROOT / resolved_path
+            if not resolved_path.exists() or not resolved_path.is_file():
+                raise HTTPException(status_code=404, detail="Document file not found.")
+            data = resolved_path.read_bytes()
+
+        index_document_content(db, document, data)
+        db.commit()
+        db.refresh(document)
+        return document.status in {"indexed", "index_empty"}
+    except Exception as exc:
+        mark_document_index_failed(db, document, exc)
+        return False
 
 
 def seed_bundled_rag_documents(db: Session) -> None:
@@ -156,7 +177,10 @@ def seed_bundled_rag_documents(db: Session) -> None:
             document.metadata_json = metadata
             db.flush()
 
-        index_document_content(db, document, data)
+        try:
+            index_document_content(db, document, data)
+        except Exception as exc:
+            mark_document_index_failed(db, document, exc)
 
     db.commit()
 
