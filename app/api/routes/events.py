@@ -129,7 +129,16 @@ def analyze_event(payload: EventAnalyzeRequest, db: Session = Depends(get_db)) -
             "detail": exc.detail,
         }
 
-    analysis.evidence_json = {**(analysis.evidence_json or {}), "artifacts": response_payload.artifacts}
+    response_payload_data = response_payload.model_dump(mode="json")
+    analysis.evidence_json = {
+        "classification_evidence": analysis_result["classification"]["evidence"],
+        "similarity": analysis_result["similarity"],
+        "history": analysis_result["history"],
+        "documentation": analysis_result["documentation"],
+        "recommendation": analysis_result["recommendation"],
+        "artifacts": response_payload.artifacts,
+        "response_payload": response_payload_data,
+    }
     db.commit()
 
     return response_payload

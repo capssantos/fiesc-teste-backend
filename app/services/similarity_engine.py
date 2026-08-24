@@ -313,7 +313,13 @@ class SimilarityEngine:
     def __init__(self) -> None:
         self.dataset = load_dataset()
 
-    def find_similar(self, event_payload: dict[str, Any], k: int | None = None, db: Session | None = None) -> dict[str, Any]:
+    def find_similar(
+        self,
+        event_payload: dict[str, Any],
+        k: int | None = None,
+        db: Session | None = None,
+        include_recommendation: bool = True,
+    ) -> dict[str, Any]:
         target_k = max(1, k or settings.similarity_k)
         query_raw = _build_query_features(event_payload, self.dataset)
         query_scaled = _scale_query(query_raw, self.dataset)
@@ -369,7 +375,13 @@ class SimilarityEngine:
         }
 
         recommendation: dict[str, Any]
-        if probable_state == "operational_state":
+        if not include_recommendation:
+            recommendation = {
+                "status": "not_requested",
+                "recommendation_available": False,
+                "message": "Recommendation generation skipped for history lookup.",
+            }
+        elif probable_state == "operational_state":
             recommendation = {
                 "status": "not_applicable_for_non_fault_state",
                 "recommendation_available": False,
