@@ -49,14 +49,14 @@ class Settings(BaseSettings):
     fault_document_map_path: str = str(BACKEND_ROOT / "config" / "fault_document_map.yaml")
     dataset_path: str = str(BACKEND_ROOT / "docs" / "banner.csv")
 
-    @field_validator("debug", mode="before")
+    @field_validator("debug", "auto_migrate_on_startup", mode="before")
     @classmethod
-    def parse_debug(cls, value: Any) -> Any:
+    def parse_bool_aliases(cls, value: Any) -> Any:
         if isinstance(value, str):
             normalized = value.strip().lower()
-            if normalized in {"release", "prod", "production"}:
+            if normalized in {"false", "0", "no", "off", "release", "prod", "production"}:
                 return False
-            if normalized in {"dev", "development"}:
+            if normalized in {"true", "ture", "1", "yes", "on", "dev", "development"}:
                 return True
         return value
 
