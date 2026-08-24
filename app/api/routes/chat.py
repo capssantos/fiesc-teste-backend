@@ -47,9 +47,27 @@ def _resolve_context(db: Session, analysis_id: UUID | None, fault: str | None) -
 def _session_title(fault: str | None, title: str | None) -> str:
     if title and title.strip():
         return title.strip()[:255]
-    if fault:
-        return f"Conversa sobre {fault}"[:255]
     return "Nova conversa"
+
+
+def _title_from_message(message: str) -> str:
+    normalized = " ".join(message.strip().split())
+    if not normalized:
+        return "Nova conversa"
+
+    sentence_end_positions = [
+        position for marker in [".", "?", "!"] if (position := normalized.find(marker)) != -1
+    ]
+    if sentence_end_positions:
+        normalized = normalized[: min(sentence_end_positions) + 1]
+
+    if len(normalized) <= 56:
+        return normalized
+    return f"{normalized[:53].rstrip()}..."
+
+
+def _is_default_title(title: str) -> bool:
+    return title == "Nova conversa" or title.startswith("Conversa sobre ")
 
 
 def _message_item(message: ChatMessageRecord) -> ChatMessageItem:
@@ -64,6 +82,7 @@ def _message_item(message: ChatMessageRecord) -> ChatMessageItem:
 
 
 def _session_item(session: ChatSessionRecord, message_count: int | None = None) -> ChatSessionItem:
+    last_message = session.messages[-1] if session.messages else None
     return ChatSessionItem(
         id=session.id,
         title=session.title,
@@ -71,6 +90,8 @@ def _session_item(session: ChatSessionRecord, message_count: int | None = None) 
         fault=session.fault,
         status=session.status,
         message_count=message_count if message_count is not None else len(session.messages),
+        last_message_preview=_title_from_message(last_message.content) if last_message else None,
+        last_message_at=last_message.created_at if last_message else None,
         created_at=session.created_at,
         updated_at=session.updated_at,
     )
@@ -130,6 +151,8 @@ def _send_message(db: Session, session: ChatSessionRecord, message_text: str) ->
     )
     db.add(user_message)
     db.flush()
+    if _is_default_title(session.title):
+        session.title = _title_from_message(message_text)
 
     if not target_fault:
         result = {
@@ -182,6 +205,7 @@ def list_sessions(
 ) -> ChatSessionListResponse:
     records = db.scalars(
         select(ChatSessionRecord)
+        .options(selectinload(ChatSessionRecord.messages))
         .where(ChatSessionRecord.status != "deleted")
         .order_by(ChatSessionRecord.updated_at.desc())
         .limit(limit)

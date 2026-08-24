@@ -44,6 +44,8 @@ class ChatSessionItem(BaseModel):
     fault: str | None = None
     status: str
     message_count: int = 0
+    last_message_preview: str | None = None
+    last_message_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
