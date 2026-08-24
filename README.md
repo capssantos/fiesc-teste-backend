@@ -1,6 +1,6 @@
 # Backend
 
-Backend da solucao de manutencao prescritiva.
+API da solucao de manutencao prescritiva.
 
 ## Stack
 
@@ -10,18 +10,23 @@ Backend da solucao de manutencao prescritiva.
 - `Alembic`
 - `PostgreSQL`
 - `MinIO / S3 compativel`
+- `PyMuPDF`
+
+## Objetivo
+
+O backend recebe um evento novo, busca eventos historicos semelhantes, identifica a falha mais provavel, consulta a documentacao mapeada e controla o uso seguro do LLM.
 
 ## Estrutura
 
-- `app/main.py`: bootstrap da API
+- `app/main.py`: bootstrap da API e handlers globais
 - `app/api/`: rotas HTTP
-- `app/core/`: configuracao
+- `app/core/`: configuracao e settings
 - `app/db/`: sessao e modelos
 - `app/schemas/`: contratos Pydantic
-- `app/services/`: servicos internos
+- `app/services/`: similaridade, retrieval, recommendation, storage e integrações
 - `alembic/`: migrations
 
-## Endpoints atuais
+## Endpoints
 
 - `GET /api/v1/health`
 - `POST /api/v1/events/analyze`
@@ -32,18 +37,25 @@ Backend da solucao de manutencao prescritiva.
 - `POST /api/v1/documents`
 - `POST /api/v1/chat`
 
-## Regras importantes
+## O que o backend ja faz
 
-- `POST /api/v1/events/analyze` recebe `application/json`
-- esse endpoint aceita o formato do case com `id`, `created_at`, metricas e `fault`
-- `fault` pode entrar como referencia do registro de teste, mas nao deve ser usado como feature de similaridade
-- upload de documentos deve ir para `POST /api/v1/documents`
-- o backend usa `docs/banner.csv` como base historica para similaridade
-- o backend usa `config/fault_document_map.yaml` para validar suporte documental
-- o backend exclui o proprio evento da vizinhanca quando o `id` da entrada coincide com um registro historico
-- o backend faz retrieval simples dos documentos mapeados antes de montar recommendation/chat
+- aceita o payload do case com `id`, `created_at`, metricas e `fault`
+- trata `fault` apenas como referencia e nao como feature
+- usa `docs/banner.csv` como historico de similaridade
+- exclui o proprio evento da vizinhanca quando o `id` coincide com o historico
+- calcula `neighbors`, `classification`, `history` e `documentation`
+- usa `config/fault_document_map.yaml` para suporte documental
+- faz retrieval simples dos documentos mapeados
+- salva documentos e artifacts em `MinIO / S3`
+- persiste eventos, analises e documentos no PostgreSQL
 
-## Rodando localmente
+## Instalacao local
+
+Entrar na pasta:
+
+```bash
+cd backend
+```
 
 Instalar dependencias:
 
@@ -57,15 +69,13 @@ Criar ambiente:
 copy .env.example .env
 ```
 
-Rodar migration:
+Aplicar migrations:
 
 ```bash
 alembic -c alembic.ini upgrade head
 ```
 
-Se `AUTO_MIGRATE_ON_STARTUP=true`, a API tambem tenta aplicar `alembic upgrade head` no startup.
-
-Subir API:
+Subir a API:
 
 ```bash
 uvicorn app.main:app --reload
@@ -77,14 +87,113 @@ Ou:
 python app/main.py
 ```
 
+Documentacao interativa:
+
+```text
+http://localhost:8000/docs
+```
+
+## Variaveis de ambiente principais
+
+### Banco
+
+- `DATABASE_URL`: conexao com PostgreSQL
+- `AUTO_MIGRATE_ON_STARTUP`: aplica `alembic upgrade head` no startup
+- `CORS_ORIGINS`: origins explicitamente permitidos no navegador
+
+### Similaridade
+
+- `SIMILARITY_K`: quantidade de vizinhos
+
+### Object storage
+
+- `STORAGE_BACKEND`: hoje `minio`
+- `S3_ENDPOINT_URL`: endpoint interno do storage
+- `S3_PUBLIC_BASE_URL`: base publica para links assinados
+- `S3_ACCESS_KEY`: access key do storage
+- `S3_SECRET_KEY`: secret key do storage
+- `S3_DOCUMENTS_BUCKET`: bucket de documentos
+- `S3_ARTIFACTS_BUCKET`: bucket de artifacts
+
+### LLM
+
+- `LLM_PROVIDER`: vazio, `openai` ou `ollama`
+- `OPENAI_API_KEY`: chave da OpenAI
+- `OPENAI_MODEL`: modelo OpenAI
+- `OPENAI_BASE_URL`: base da API OpenAI
+- `OLLAMA_MODEL`: modelo Ollama
+- `OLLAMA_BASE_URL`: base do Ollama
+
+## Exemplo de payload para analise
+
+`POST /api/v1/events/analyze`
+
+```json
+{
+  "id": 114387,
+  "created_at": "2026-06-01T21:32:53.911176Z",
+  "z_rms_velocity_in_s": 0.0597,
+  "z_rms_velocity_mm_s": 1.517,
+  "temperature_f": 76.44,
+  "temperature_c": 24.69,
+  "x_rms_velocity_in_s": 0.0787,
+  "x_rms_velocity_mm_s": 2.0,
+  "z_peak_acceleration_g": 0.484,
+  "x_peak_acceleration_g": 0.631,
+  "z_peak_vel_comp_freq_hz": 61.0,
+  "x_peak_vel_comp_freq_hz": 61.0,
+  "z_rms_acceleration_g": 0.09,
+  "x_rms_acceleration_g": 0.114,
+  "z_kurtosis": 2.392,
+  "x_kurtosis": 2.77,
+  "z_crest_factor": 3.747,
+  "x_crest_factor": 4.269,
+  "z_peak_velocity_in_s": 0.0844,
+  "z_peak_velocity_mm_s": 2.146,
+  "x_peak_velocity_in_s": 0.1113,
+  "x_peak_velocity_mm_s": 2.829,
+  "z_high_freq_rms_accel_g": 0.129,
+  "x_high_freq_rms_accel_g": 0.147,
+  "fault": "cocked_rotor_2",
+  "rpm": 1000.0
+}
+```
+
 ## Docker
 
-O projeto possui `backend/Dockerfile` e `docker-compose.yml` na raiz para subir:
+O projeto possui:
 
+- `backend/Dockerfile`
+- `docker-compose.yml` na raiz
+
+O compose sobe:
+
+- `frontend`
 - `api`
 - `postgres`
 - `minio`
 
+## Como subir tudo com Docker
+
+Na raiz do projeto:
+
+```bash
+docker compose up --build
+```
+
+Servicos:
+
+- backend: `http://localhost:8000`
+- minio console: `http://localhost:9001`
+
 ## Seguranca
 
-Seguir as regras de `docs/security_policies.md`.
+Seguir `docs/security_policies.md`.
+
+Pontos principais:
+
+- validacao forte de payloads
+- guardrail documental antes do LLM
+- sem segredos no frontend
+- PostgreSQL e MinIO acessados apenas pelo backend
+- links de download assinados
