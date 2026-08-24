@@ -5,13 +5,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /workspace/backend
 
-COPY backend/requirements.txt ./requirements.txt
+COPY requirements.txt ./requirements.txt
 
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-COPY backend /workspace/backend
-COPY config /workspace/config
+COPY app /workspace/backend/app
+COPY alembic /workspace/backend/alembic
+COPY alembic.ini docker-entrypoint.sh ./
 
 RUN chmod +x /workspace/backend/docker-entrypoint.sh
 
