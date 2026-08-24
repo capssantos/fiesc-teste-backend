@@ -104,6 +104,20 @@ def upload_bytes(bucket: str, object_key: str, data: bytes, content_type: str) -
     )
 
 
+def download_bytes(bucket: str, object_key: str) -> bytes:
+    client = _require_client()
+    try:
+        response = client.get_object(Bucket=bucket, Key=object_key)
+        return response["Body"].read()
+    except (ClientError, BotoCoreError) as exc:
+        if isinstance(exc, ClientError):
+            error_code = str(exc.response.get("Error", {}).get("Code", ""))
+            status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if status_code in {401, 403} or error_code in {"403", "AccessDenied", "InvalidAccessKeyId", "SignatureDoesNotMatch"}:
+                raise HTTPException(status_code=503, detail="object_storage_access_denied") from exc
+        raise HTTPException(status_code=503, detail="object_storage_unavailable") from exc
+
+
 def generate_download_url(bucket: str, object_key: str, response_filename: str | None = None) -> str:
     client = _require_client()
     params = {"Bucket": bucket, "Key": object_key}

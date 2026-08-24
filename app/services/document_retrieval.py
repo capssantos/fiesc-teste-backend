@@ -4,6 +4,7 @@ import json
 import re
 import unicodedata
 import zipfile
+from io import BytesIO
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -50,12 +51,12 @@ def _chunk_text(text: str, max_chars: int = 1400) -> list[str]:
     return chunks
 
 
-def _read_text_file(path: Path) -> list[dict[str, Any]]:
-    return [{"page": 1, "text": path.read_text(encoding="utf-8", errors="ignore")}]
+def _read_text_bytes(data: bytes) -> list[dict[str, Any]]:
+    return [{"page": 1, "text": data.decode("utf-8", errors="ignore")}]
 
 
-def _read_docx_file(path: Path) -> list[dict[str, Any]]:
-    with zipfile.ZipFile(path) as archive:
+def _read_docx_bytes(data: bytes) -> list[dict[str, Any]]:
+    with zipfile.ZipFile(BytesIO(data)) as archive:
         xml_data = archive.read("word/document.xml")
     root = ElementTree.fromstring(xml_data)
     namespaces = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
@@ -67,14 +68,32 @@ def _read_docx_file(path: Path) -> list[dict[str, Any]]:
     return [{"page": 1, "text": "\n\n".join(paragraphs)}]
 
 
-def _read_pdf_file(path: Path) -> list[dict[str, Any]]:
+def _read_pdf_bytes(data: bytes) -> list[dict[str, Any]]:
     import pymupdf  # type: ignore
 
     result: list[dict[str, Any]] = []
-    with pymupdf.open(path) as document:
+    with pymupdf.open(stream=data, filetype="pdf") as document:
         for index, page in enumerate(document, start=1):
             result.append({"page": index, "text": page.get_text("text")})
     return result
+
+
+def extract_document_chunks(filename: str, data: bytes) -> tuple[dict[str, Any], ...]:
+    suffix = Path(filename).suffix.lower()
+    if suffix in {".txt", ".md"}:
+        pages = _read_text_bytes(data)
+    elif suffix == ".docx":
+        pages = _read_docx_bytes(data)
+    elif suffix == ".pdf":
+        pages = _read_pdf_bytes(data)
+    else:
+        return tuple()
+
+    chunks: list[dict[str, Any]] = []
+    for page_data in pages:
+        for chunk_index, chunk in enumerate(_chunk_text(page_data["text"]), start=1):
+            chunks.append({"page": page_data["page"], "chunk_index": chunk_index, "text": chunk})
+    return tuple(chunks)
 
 
 @lru_cache
@@ -83,21 +102,7 @@ def load_document_chunks(document_path: str) -> tuple[dict[str, Any], ...]:
     if not path.exists():
         return tuple()
 
-    suffix = path.suffix.lower()
-    if suffix in {".txt", ".md"}:
-        pages = _read_text_file(path)
-    elif suffix == ".docx":
-        pages = _read_docx_file(path)
-    elif suffix == ".pdf":
-        pages = _read_pdf_file(path)
-    else:
-        return tuple()
-
-    chunks: list[dict[str, Any]] = []
-    for page_data in pages:
-        for chunk in _chunk_text(page_data["text"]):
-            chunks.append({"page": page_data["page"], "text": chunk})
-    return tuple(chunks)
+    return extract_document_chunks(path.name, path.read_bytes())
 
 
 def retrieve_document_context(documents: list[dict[str, Any]], query: str, top_k: int = 3) -> list[dict[str, Any]]:

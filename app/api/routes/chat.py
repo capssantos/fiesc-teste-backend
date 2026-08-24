@@ -32,7 +32,7 @@ def contextual_chat(payload: ChatRequest, db: Session = Depends(get_db)) -> Chat
             answer={},
         )
 
-    result = build_recommendation_for_fault(target_fault, payload.message)
+    result = build_recommendation_for_fault(target_fault, payload.message, db)
     return ChatResponse(
         status=result["status"],
         recommendation_available=result["recommendation_available"],

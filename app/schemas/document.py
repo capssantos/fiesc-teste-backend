@@ -11,6 +11,9 @@ class DocumentItem(BaseModel):
     id: UUID
     filename: str
     storage_uri: str
+    source: str = "upload"
+    external_id: str | None = None
+    content_hash: str | None = None
     bucket: str | None = None
     object_key: str | None = None
     download_url: str | None = None
@@ -18,8 +21,14 @@ class DocumentItem(BaseModel):
     status: str
     metadata_json: dict[str, Any] | None = None
     created_at: datetime
+    indexed_at: datetime | None = None
 
 
 class DocumentUploadResponse(BaseModel):
+    document: DocumentItem
+    message: str
+
+
+class DocumentReindexResponse(BaseModel):
     document: DocumentItem
     message: str

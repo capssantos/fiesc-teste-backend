@@ -37,6 +37,14 @@ async def lifespan(_: FastAPI):
         ensure_buckets()
     except Exception as exc:
         logger.warning("Object storage startup check failed: %s", exc)
+    try:
+        from app.db.session import SessionLocal
+        from app.services.rag_index import seed_bundled_rag_documents
+
+        with SessionLocal() as db:
+            seed_bundled_rag_documents(db)
+    except Exception as exc:
+        logger.warning("Bundled RAG document indexing failed on startup: %s", exc)
     yield
 
 

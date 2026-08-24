@@ -12,3 +12,5 @@ class HealthResponse(BaseModel):
     llm_provider: str | None = None
     openai_model: str | None = None
     openai_api_key_present: bool = False
+    indexed_document_count: int = 0
+    document_chunk_count: int = 0

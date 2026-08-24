@@ -18,7 +18,7 @@ router = APIRouter(prefix="/events", tags=["events"])
 def analyze_event(payload: EventAnalyzeRequest, db: Session = Depends(get_db)) -> EventAnalyzeResponse:
     payload_dict = payload.model_dump(mode="json")
     try:
-        analysis_result = get_similarity_engine().find_similar(payload_dict, settings.similarity_k)
+        analysis_result = get_similarity_engine().find_similar(payload_dict, settings.similarity_k, db)
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -136,9 +136,9 @@ def analyze_event(payload: EventAnalyzeRequest, db: Session = Depends(get_db)) -
 
 
 @router.post("/similar", response_model=SimilarEventsResponse)
-def similar_events(payload: EventAnalyzeRequest) -> SimilarEventsResponse:
+def similar_events(payload: EventAnalyzeRequest, db: Session = Depends(get_db)) -> SimilarEventsResponse:
     try:
-        result = get_similarity_engine().find_similar(payload.model_dump(mode="json"), settings.similarity_k)
+        result = get_similarity_engine().find_similar(payload.model_dump(mode="json"), settings.similarity_k, db)
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

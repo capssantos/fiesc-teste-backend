@@ -1,21 +1,27 @@
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import BACKEND_ROOT
 from app.core.config import settings
-from app.db.models import DocumentRecord
+from app.db.models import DocumentChunkRecord, DocumentRecord
 from app.db.session import get_db
-from app.schemas.document import DocumentItem, DocumentUploadResponse
+from app.schemas.document import DocumentItem, DocumentReindexResponse, DocumentUploadResponse
 from app.services.document_storage import sanitize_filename, validate_extension
 from app.services.fault_map import get_fault_entry, load_fault_map
-from app.services.object_storage import generate_download_url, upload_bytes
+from app.services.object_storage import upload_bytes
+from app.services.rag_index import (
+    calculate_content_hash,
+    document_download_url,
+    index_document_content,
+    reindex_document,
+    seed_bundled_rag_documents,
+)
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -28,49 +34,30 @@ def _resolve_rag_document_path(document_path: str) -> Path:
     return BACKEND_ROOT / path
 
 
-def _rag_documents(request: Request) -> list[DocumentItem]:
-    mapping = load_fault_map()
-    documents = mapping.get("documents", {})
-    faults = mapping.get("faults", {})
-    items: list[DocumentItem] = []
-
-    for document_id, document_data in documents.items():
-        document_path = str(document_data.get("path") or "")
-        resolved_path = _resolve_rag_document_path(document_path)
-        if not resolved_path.exists():
-            continue
-
-        related_faults = [
-            entry.get("canonical_label", canonical_key)
-            for canonical_key, entry in faults.items()
-            if document_id in entry.get("documents", [])
-        ]
-
-        items.append(
-            DocumentItem(
-                id=uuid.uuid5(uuid.NAMESPACE_URL, f"fiesc-rag-document:{document_id}"),
-                filename=resolved_path.name,
-                storage_uri=document_path,
-                download_url=str(request.url_for("download_rag_document", document_id=document_id)),
-                fault=", ".join(related_faults) if related_faults else None,
-                status="rag_indexed",
-                metadata_json={
-                    "source": "rag",
-                    "document_id": document_id,
-                    "title": document_data.get("title"),
-                    "path": document_path,
-                },
-                created_at=datetime.fromtimestamp(resolved_path.stat().st_mtime, tz=timezone.utc),
-            )
-        )
-
-    return items
+def _document_item(request: Request, record: DocumentRecord) -> DocumentItem:
+    metadata = record.metadata_json or {}
+    return DocumentItem(
+        id=record.id,
+        filename=record.filename,
+        storage_uri=record.stored_path,
+        bucket=metadata.get("bucket"),
+        object_key=metadata.get("object_key"),
+        download_url=document_download_url(request.url_for, record),
+        fault=record.fault,
+        status=record.status,
+        metadata_json=metadata,
+        created_at=record.created_at,
+        source=record.source,
+        external_id=record.external_id,
+        content_hash=record.content_hash,
+        indexed_at=record.indexed_at,
+    )
 
 
 @router.get("", response_model=list[DocumentItem])
 def list_documents(request: Request, db: Session = Depends(get_db)) -> list[DocumentItem]:
     try:
-        records = db.scalars(select(DocumentRecord).order_by(DocumentRecord.created_at.desc())).all()
+        records = db.scalars(select(DocumentRecord).order_by(DocumentRecord.source, DocumentRecord.created_at.desc())).all()
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -80,32 +67,7 @@ def list_documents(request: Request, db: Session = Depends(get_db)) -> list[Docu
             },
         ) from exc
 
-    response: list[DocumentItem] = _rag_documents(request)
-    for record in records:
-        metadata = record.metadata_json or {}
-        bucket = metadata.get("bucket")
-        object_key = metadata.get("object_key")
-        download_url = None
-        if bucket and object_key:
-            try:
-                download_url = generate_download_url(bucket=bucket, object_key=object_key, response_filename=record.filename)
-            except HTTPException:
-                download_url = None
-        response.append(
-            DocumentItem(
-                id=record.id,
-                filename=record.filename,
-                storage_uri=record.stored_path,
-                bucket=bucket,
-                object_key=object_key,
-                download_url=download_url,
-                fault=record.fault,
-                status=record.status,
-                metadata_json=metadata,
-                created_at=record.created_at,
-            )
-        )
-    return response
+    return [_document_item(request, record) for record in records]
 
 
 @router.get("/rag/{document_id}/download", name="download_rag_document")
@@ -126,8 +88,48 @@ def download_rag_document(document_id: str) -> FileResponse:
     )
 
 
+@router.post("/reindex")
+def reindex_documents(db: Session = Depends(get_db)) -> dict[str, int]:
+    seed_bundled_rag_documents(db)
+    records = db.scalars(select(DocumentRecord).where(DocumentRecord.source == "upload")).all()
+
+    reindexed = 0
+    failed = 0
+    for record in records:
+        try:
+            reindex_document(db, record)
+            reindexed += 1
+        except HTTPException:
+            failed += 1
+            record.status = "index_failed"
+            db.commit()
+
+    indexed_documents = db.scalar(select(func.count()).select_from(DocumentRecord).where(DocumentRecord.status == "indexed")) or 0
+    document_chunks = db.scalar(select(func.count()).select_from(DocumentChunkRecord)) or 0
+    return {
+        "indexed_documents": indexed_documents,
+        "document_chunks": document_chunks,
+        "reindexed_uploads": reindexed,
+        "failed_uploads": failed,
+    }
+
+
+@router.post("/{document_id}/reindex", response_model=DocumentReindexResponse)
+def reindex_existing_document(document_id: uuid.UUID, request: Request, db: Session = Depends(get_db)) -> DocumentReindexResponse:
+    record = db.get(DocumentRecord, document_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    reindex_document(db, record)
+    return DocumentReindexResponse(
+        document=_document_item(request, record),
+        message="Document reindexed.",
+    )
+
+
 @router.post("", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     canonical_fault: str | None = Form(default=None),
     db: Session = Depends(get_db),
@@ -157,9 +159,12 @@ async def upload_document(
     record = DocumentRecord(
         filename=safe_name,
         stored_path=f"s3://{settings.s3_documents_bucket}/{object_key}",
+        source="upload",
+        content_hash=calculate_content_hash(content),
         fault=resolved_fault,
-        status="uploaded",
+        status="indexing",
         metadata_json={
+            "source": "upload",
             "content_type": file.content_type,
             "size_bytes": len(content),
             "original_filename": filename,
@@ -168,25 +173,12 @@ async def upload_document(
         },
     )
     db.add(record)
+    db.flush()
+    index_document_content(db, record, content)
     db.commit()
     db.refresh(record)
 
     return DocumentUploadResponse(
-        document=DocumentItem(
-            id=record.id,
-            filename=record.filename,
-            storage_uri=record.stored_path,
-            bucket=settings.s3_documents_bucket,
-            object_key=object_key,
-            download_url=generate_download_url(
-                bucket=settings.s3_documents_bucket,
-                object_key=object_key,
-                response_filename=record.filename,
-            ),
-            fault=record.fault,
-            status=record.status,
-            metadata_json=record.metadata_json,
-            created_at=record.created_at,
-        ),
+        document=_document_item(request, record),
         message="Document uploaded and stored in object storage.",
     )

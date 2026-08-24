@@ -10,10 +10,13 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
 from app.services.document_retrieval import retrieve_document_context, serialize_context_chunks
 from app.services.fault_map import get_documents_for_entry, get_fault_entry
 from app.services.recommendation import build_recommendation_for_fault
+from app.services.rag_index import retrieve_indexed_document_context
 
 
 FEATURE_COLUMNS = [
@@ -310,7 +313,7 @@ class SimilarityEngine:
     def __init__(self) -> None:
         self.dataset = load_dataset()
 
-    def find_similar(self, event_payload: dict[str, Any], k: int | None = None) -> dict[str, Any]:
+    def find_similar(self, event_payload: dict[str, Any], k: int | None = None, db: Session | None = None) -> dict[str, Any]:
         target_k = max(1, k or settings.similarity_k)
         query_raw = _build_query_features(event_payload, self.dataset)
         query_scaled = _scale_query(query_raw, self.dataset)
@@ -346,7 +349,10 @@ class SimilarityEngine:
         serialized_chunks = []
         if documentation_entry and documentation_entry["recommendation_supported"]:
             documents = get_documents_for_entry(documentation_entry)
-            retrieved_chunks = retrieve_document_context(documents, f"{target_label} diagnostico manutencao correcao", top_k=3)
+            query = f"{target_label} diagnostico manutencao correcao"
+            retrieved_chunks = retrieve_indexed_document_context(db, documents, query, top_k=3) if db else []
+            if not retrieved_chunks:
+                retrieved_chunks = retrieve_document_context(documents, query, top_k=3)
             serialized_chunks = serialize_context_chunks(retrieved_chunks)
         documentation = {
             "status": "supported",
@@ -370,7 +376,7 @@ class SimilarityEngine:
                 "message": "O evento se parece com um estado operacional sem falha.",
             }
         else:
-            recommendation = build_recommendation_for_fault(probable_fault, "Forneca orientacao inicial de manutencao.")
+            recommendation = build_recommendation_for_fault(probable_fault, "Forneca orientacao inicial de manutencao.", db)
 
         return {
             "classification": {

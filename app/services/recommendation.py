@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
 from app.services.document_retrieval import context_to_prompt, retrieve_document_context, serialize_context_chunks
 from app.services.fault_map import get_documents_for_entry, get_fault_entry
 from app.services.llm_client import LLMProviderError, generate_llm_text
+from app.services.rag_index import retrieve_indexed_document_context
 
 
 SYSTEM_PROMPT = """Voce e um assistente de manutencao industrial.
@@ -17,7 +20,7 @@ Retorne JSON com as chaves: summary, recommended_actions, inspection_points, war
 """
 
 
-def build_recommendation_for_fault(fault_label: str, user_message: str) -> dict[str, Any]:
+def build_recommendation_for_fault(fault_label: str, user_message: str, db: Session | None = None) -> dict[str, Any]:
     entry = get_fault_entry(fault_label)
     if entry is None or not entry["recommendation_supported"]:
         return {
@@ -30,7 +33,9 @@ def build_recommendation_for_fault(fault_label: str, user_message: str) -> dict[
 
     documents = get_documents_for_entry(entry)
     query = f"{fault_label} {entry['canonical_label']} {user_message} diagnostico correcao manutencao inspecao"
-    chunks = retrieve_document_context(documents, query, top_k=3)
+    chunks = retrieve_indexed_document_context(db, documents, query, top_k=3) if db else []
+    if not chunks:
+        chunks = retrieve_document_context(documents, query, top_k=3)
     serialized_chunks = serialize_context_chunks(chunks)
 
     if not serialized_chunks:
