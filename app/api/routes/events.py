@@ -17,7 +17,17 @@ router = APIRouter(prefix="/events", tags=["events"])
 @router.post("/analyze", response_model=EventAnalyzeResponse, status_code=status.HTTP_201_CREATED)
 def analyze_event(payload: EventAnalyzeRequest, db: Session = Depends(get_db)) -> EventAnalyzeResponse:
     payload_dict = payload.model_dump(mode="json")
-    analysis_result = get_similarity_engine().find_similar(payload_dict, settings.similarity_k)
+    try:
+        analysis_result = get_similarity_engine().find_similar(payload_dict, settings.similarity_k)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "similarity_dataset_missing",
+                "message": "Dataset de similaridade nao encontrado no backend.",
+                "expected_path": str(settings.dataset_path),
+            },
+        ) from exc
 
     event = EventRecord(
         source_event_id=payload.resolved_source_event_id,
@@ -127,7 +137,17 @@ def analyze_event(payload: EventAnalyzeRequest, db: Session = Depends(get_db)) -
 
 @router.post("/similar", response_model=SimilarEventsResponse)
 def similar_events(payload: EventAnalyzeRequest) -> SimilarEventsResponse:
-    result = get_similarity_engine().find_similar(payload.model_dump(mode="json"), settings.similarity_k)
+    try:
+        result = get_similarity_engine().find_similar(payload.model_dump(mode="json"), settings.similarity_k)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "similarity_dataset_missing",
+                "message": "Dataset de similaridade nao encontrado no backend.",
+                "expected_path": str(settings.dataset_path),
+            },
+        ) from exc
     return SimilarEventsResponse(
         status=result["similarity"]["status"],
         event=payload.model_dump(mode="json"),

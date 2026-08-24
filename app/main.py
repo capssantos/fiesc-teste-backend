@@ -40,21 +40,12 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.app_name, debug=settings.debug, lifespan=lifespan)
+fastapi_app = FastAPI(title=settings.app_name, debug=settings.debug, lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_origin_regex=settings.cors_origin_regex,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.include_router(api_router, prefix=settings.api_v1_prefix)
+fastapi_app.include_router(api_router, prefix=settings.api_v1_prefix)
 
 
-@app.exception_handler(HTTPException)
+@fastapi_app.exception_handler(HTTPException)
 async def http_exception_handler(_, exc: HTTPException):
     detail = exc.detail
     message = detail if isinstance(detail, str) else "Erro na requisicao."
@@ -82,7 +73,7 @@ async def http_exception_handler(_, exc: HTTPException):
     )
 
 
-@app.exception_handler(RequestValidationError)
+@fastapi_app.exception_handler(RequestValidationError)
 async def request_validation_exception_handler(_, exc: RequestValidationError):
     errors = exc.errors()
 
@@ -153,9 +144,19 @@ async def request_validation_exception_handler(_, exc: RequestValidationError):
     )
 
 
-@app.get("/")
+@fastapi_app.get("/")
 def root() -> dict[str, str]:
     return {"app": settings.app_name, "api_prefix": settings.api_v1_prefix, "docs": "/docs"}
+
+
+app = CORSMiddleware(
+    fastapi_app,
+    allow_origins=settings.cors_origin_list,
+    allow_origin_regex=settings.cors_origin_regex,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 if __name__ == "__main__":

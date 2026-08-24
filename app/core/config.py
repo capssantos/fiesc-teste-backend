@@ -1,6 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,6 +48,17 @@ class Settings(BaseSettings):
     allowed_document_extensions: str = ".pdf,.txt,.md,.docx"
     fault_document_map_path: str = str(REPO_ROOT / "config" / "fault_document_map.yaml")
     dataset_path: str = str(REPO_ROOT / "docs" / "banner.csv")
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def parse_debug(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"release", "prod", "production"}:
+                return False
+            if normalized in {"dev", "development"}:
+                return True
+        return value
 
     @property
     def cors_origin_list(self) -> list[str]:
