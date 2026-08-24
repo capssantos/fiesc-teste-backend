@@ -1,24 +1,74 @@
 import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import BACKEND_ROOT
 from app.core.config import settings
 from app.db.models import DocumentRecord
 from app.db.session import get_db
 from app.schemas.document import DocumentItem, DocumentUploadResponse
 from app.services.document_storage import sanitize_filename, validate_extension
-from app.services.fault_map import get_fault_entry
+from app.services.fault_map import get_fault_entry, load_fault_map
 from app.services.object_storage import generate_download_url, upload_bytes
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
+def _resolve_rag_document_path(document_path: str) -> Path:
+    path = Path(document_path)
+    if path.is_absolute():
+        return path
+    return BACKEND_ROOT / path
+
+
+def _rag_documents(request: Request) -> list[DocumentItem]:
+    mapping = load_fault_map()
+    documents = mapping.get("documents", {})
+    faults = mapping.get("faults", {})
+    items: list[DocumentItem] = []
+
+    for document_id, document_data in documents.items():
+        document_path = str(document_data.get("path") or "")
+        resolved_path = _resolve_rag_document_path(document_path)
+        if not resolved_path.exists():
+            continue
+
+        related_faults = [
+            entry.get("canonical_label", canonical_key)
+            for canonical_key, entry in faults.items()
+            if document_id in entry.get("documents", [])
+        ]
+
+        items.append(
+            DocumentItem(
+                id=uuid.uuid5(uuid.NAMESPACE_URL, f"fiesc-rag-document:{document_id}"),
+                filename=resolved_path.name,
+                storage_uri=document_path,
+                download_url=str(request.url_for("download_rag_document", document_id=document_id)),
+                fault=", ".join(related_faults) if related_faults else None,
+                status="rag_indexed",
+                metadata_json={
+                    "source": "rag",
+                    "document_id": document_id,
+                    "title": document_data.get("title"),
+                    "path": document_path,
+                },
+                created_at=datetime.fromtimestamp(resolved_path.stat().st_mtime, tz=timezone.utc),
+            )
+        )
+
+    return items
+
+
 @router.get("", response_model=list[DocumentItem])
-def list_documents(db: Session = Depends(get_db)) -> list[DocumentItem]:
+def list_documents(request: Request, db: Session = Depends(get_db)) -> list[DocumentItem]:
     try:
         records = db.scalars(select(DocumentRecord).order_by(DocumentRecord.created_at.desc())).all()
     except SQLAlchemyError as exc:
@@ -30,7 +80,7 @@ def list_documents(db: Session = Depends(get_db)) -> list[DocumentItem]:
             },
         ) from exc
 
-    response: list[DocumentItem] = []
+    response: list[DocumentItem] = _rag_documents(request)
     for record in records:
         metadata = record.metadata_json or {}
         bucket = metadata.get("bucket")
@@ -56,6 +106,24 @@ def list_documents(db: Session = Depends(get_db)) -> list[DocumentItem]:
             )
         )
     return response
+
+
+@router.get("/rag/{document_id}/download", name="download_rag_document")
+def download_rag_document(document_id: str) -> FileResponse:
+    document_data = load_fault_map().get("documents", {}).get(document_id)
+    if not document_data:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    document_path = str(document_data.get("path") or "")
+    resolved_path = _resolve_rag_document_path(document_path)
+    if not resolved_path.exists() or not resolved_path.is_file():
+        raise HTTPException(status_code=404, detail="Document file not found.")
+
+    return FileResponse(
+        path=resolved_path,
+        media_type="application/pdf" if resolved_path.suffix.lower() == ".pdf" else None,
+        filename=resolved_path.name,
+    )
 
 
 @router.post("", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
